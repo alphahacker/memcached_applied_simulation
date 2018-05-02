@@ -89,8 +89,9 @@ router.post('/', function(req, res, next) {
         } else {
           var key = tweetObjectList[i].contentId;
           var value = tweetObjectList[i].content;
-          urb_lru.setData(key, value, "AplisoSA", "01BlackRose08");
-          pushTweetInDataMemory(i+1, callback);
+          memcached.set(key, value, 89000, function(){
+            pushTweetInDataMemory(i+1, callback);
+          })
         }
       }
 

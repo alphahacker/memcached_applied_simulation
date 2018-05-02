@@ -13,8 +13,7 @@ var interim_log = log4js.getLogger("interim");
 var dbPool = require('../src/db.js');
 
 var urb_lru = require('../src/urb_lru');
-//var urb_lru = new lru(2450);
-
+var memcached = require('../src/memcached.js');
 var redisPool = require('../src/caching.js');
 var redirect = require('../src/redirector_send.js');
 var memoryManager = require('../src/memoryManager.js');
@@ -166,6 +165,20 @@ router.get('/get_data_test/:key', function(req, res, next) {
   console.log(urb_lru.getData(req.params.key));
 
   res.send("complete");
+});
+
+router.get('/mem_set_test/key/:key/value/:value', function(req, res, next) {
+  console.log("KEY : " + req.params.key + ", VALUE : " + req.params.value);
+  memcached.set(req.params.key, req.params.value, 89000, function(){
+    res.send("KEY : " + req.params.key + ", VALUE : " + req.params.value);
+  })
+});
+
+router.get('/mem_get_test/:key', function(req, res, next) {
+  memcached.get(req.params.key, function(err, data){
+      console.log(" - res data: "+data);
+      res.send("complete");
+  });
 });
 
 //---------------------------------------------------------------------------//
@@ -699,43 +712,47 @@ router.get('/userId/:userId/numAccess/:numAccess', function(req, res, next) {
           callback();
         } else {
           var key = contentIndexList[i];
-          var retValue = urb_lru.get(key);
-          if(retValue != null){
-            contentDataList.push(retValue);
-            monitoring.cacheHit++;
-            console.log("hit!");
-            getUserContentData(i+1, callback);
-          } else {
-            dbPool.getConnection(function(err, conn) {
-              var query_stmt = 'SELECT message FROM content ' +
-                               'WHERE id = ' + key;
-              conn.query(query_stmt, function(err, result) {
-                  if(err){
-                    error_log.info("fail to get message (MySQL) : " + err);
-                    error_log.info("QUERY STMT : " + query_stmt);
-                    error_log.info();
-                    rejected("DB err!");
-                  }
-                  if(result){
-                    tweetObject.userId = req.params.userId;
-                    tweetObject.contentId = contentIndexList[i];
-                    tweetObject.content = result[0].message;
+          memcached.get(key, function(err, data){
+            if(data != null || data != undefined){
+              contentDataList.push(data);
+              monitoring.cacheHit++;
+              //console.log("hit!");
+              getUserContentData(i+1, callback);
+            } else {
+              dbPool.getConnection(function(err, conn) {
+                var query_stmt = 'SELECT message FROM content ' +
+                                 'WHERE id = ' + key;
+                conn.query(query_stmt, function(err, result) {
+                    if(err){
+                      error_log.info("fail to get message (MySQL) : " + err);
+                      error_log.info("QUERY STMT : " + query_stmt);
+                      error_log.info();
+                      rejected("DB err!");
+                    }
+                    if(result){
+                      tweetObject.userId = req.params.userId;
+                      tweetObject.contentId = contentIndexList[i];
+                      tweetObject.content = result[0].message;
 
-                    memoryManager.checkMemory(tweetObject);
+                      memcached.set(tweetObject.contentId, tweetObject.content, 89000, function(){
+                        contentDataList.push(result[0].message);
+                        monitoring.cacheMiss++;
 
-                    contentDataList.push(result[0].message);
-                    monitoring.cacheMiss++;
+                        conn.release(); //MySQL connection release
+                        getUserContentData(i+1, callback);
+                      })
 
-                  } else {
-                    error_log.error("There's no data, even in the origin mysql server!");
-                    error_log.error();
-                  }
+                    } else {
+                      error_log.error("There's no data, even in the origin mysql server!");
+                      error_log.error();
 
-                  conn.release(); //MySQL connection release
-                  getUserContentData(i+1, callback);
-              })
-            });
-          }
+                      conn.release(); //MySQL connection release
+                      getUserContentData(i+1, callback);
+                    }
+                })
+              });
+            }
+          });
         }
       }
 
@@ -1101,10 +1118,9 @@ router.post('/:userId', function(req, res, next) {
         } else {
           var key = tweetObjectList[i].contentId;
           var value = tweetObjectList[i].content;
-          // console.log("KEY : " + key);
-          // console.log("VALUE : " + value);
-          urb_lru.setData(key, value, "AplisoSA", "01BlackRose08");
-          pushTweetInDataMemory(i+1, callback);
+          memcached.set(key, value, 89000, function(){
+            pushTweetInDataMemory(i+1, callback);
+          })
         }
       }
 
