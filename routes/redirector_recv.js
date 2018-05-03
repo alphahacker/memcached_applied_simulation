@@ -39,6 +39,7 @@ var redisPool = require('../src/caching.js');
 var memoryManager = require('../src/memoryManager.js');
 var util = require('../src/util.js');
 
+var memcached = require('../src/memcached.js');
 
 //Receive redirected data from another surrogate server.
 router.post('/', function(req, res, next) {
