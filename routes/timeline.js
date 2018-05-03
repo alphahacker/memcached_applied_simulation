@@ -1094,7 +1094,7 @@ router.post('/:userId', function(req, res, next) {
         } else {
           var key = tweetObjectList[i].userId;
           var value = tweetObjectList[i].contentId;
-          redisPool.indexMemory.rpush(key, value, function (err) {
+          redisPool.indexMemory.lpush(key, value, function (err) {
               if(err){
                 error_log.debug("fail to push the content into friend's index memory in Redis : " + err);
                 error_log.debug("key (tweetObjectList[i].userId) : " + key + ", value (tweetObjectList[i].contentId) : " + value);
