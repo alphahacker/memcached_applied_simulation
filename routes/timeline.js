@@ -183,6 +183,12 @@ router.get('/mem_get_test/:key', function(req, res, next) {
 
 //---------------------------------------------------------------------------//
 
+router.get('/mem_flush', function(req, res, next) {
+  memcached.flush(function(err, data){
+      res.send("flush complete");
+  });
+});
+
 router.get('/init', function(req, res, next) {
 
   /* db 에서 각 사용자에게 할당된 메모리 양 가지고 오기 */
